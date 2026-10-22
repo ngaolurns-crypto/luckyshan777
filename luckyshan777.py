@@ -1,6 +1,6 @@
 import sqlite3
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime, timedelta, timezone
 import os
 from google import genai
@@ -12,6 +12,8 @@ BOT_TOKEN = "8872734998:AAGaLOgwSrw4vNgERziaCH1cTGFqnaJaNJ4"
 GEMINI_API_KEY = "AQ.Ab8RN6JxVySBYSvVko8R_EeafKE_Hhli1zS2sok1YevqqrxREQ"
 ADMIN_ID = 8065105992
 
+PAYMENT_LINK = "https://t.me/payment3444"
+
 bot = telebot.TeleBot(BOT_TOKEN)
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -22,13 +24,12 @@ def get_mmt_now():
     return datetime.now(MMT)
 
 # ============================================================================
-# DATABASE SETUP (Packages, Links & Transactions)
+# DATABASE SETUP
 # ============================================================================
 def init_db():
     conn = sqlite3.connect('vip_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # ဝင်ငွေ/ထွက်ငွေ စာရင်းဇယား
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,7 +40,6 @@ def init_db():
         )
     ''')
     
-    # VIP Packages & Links ဇယား
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS packages (
             id TEXT PRIMARY KEY,
@@ -49,7 +49,6 @@ def init_db():
         )
     ''')
     
-    # ပုံမှန် Package ၇ ခု ထည့်သွင်းခြင်း (မရှိသေးမှသာ)
     default_packages = [
         ('all_in', 'အကုန်ဝင် (All Access)', 50000, 'https://t.me/+n4-uKuYVkZY3YWFl'),
         ('shan', 'ရှမ်းကား', 30000, 'https://t.me/+3JPO0ZdkgHdmYjNl'),
@@ -69,19 +68,17 @@ def init_db():
 
 init_db()
 
-# ယာယီအချက်အလက် သိမ်းဆည်းရန် (User ရွေးချယ်ထားသော Package မှတ်ရန်)
 user_selected_pkg = {}
 admin_states = {}
 
 # ============================================================================
-# CUSTOMER & ADMIN START / MENU
+# START / MENU
 # ============================================================================
 @bot.message_handler(commands=['start', 'menu'])
 def handle_start(message):
     user_id = message.from_user.id
 
     if user_id == ADMIN_ID:
-        # Admin Menu
         text = (
             "👑 **Admin စီမံခန့်ခွဲမှု ပန်နယ်** 👑\n"
             "━━━━━━━━━━━━━━━━━━━\n"
@@ -92,7 +89,6 @@ def handle_start(message):
         markup.row(InlineKeyboardButton("📊 ရောင်းအားစာရင်း ကြည့်ရန်", callback_data="admin_view_sales"))
         bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
     else:
-        # Customer Menu (Packages လာပြခြင်း)
         send_packages_menu(message.chat.id)
 
 def send_packages_menu(chat_id):
@@ -103,7 +99,7 @@ def send_packages_menu(chat_id):
     conn.close()
 
     text = (
-        "🌟 **VIP Member Store မှ ကြိုဆိုပါတယ်ရှင်** 🌟\n"
+        "🌟 **VIP Member Store** 🌟\n"
         "━━━━━━━━━━━━━━━━━━━\n"
         "ဝယ်ယူလိုသော Package ကို အောက်ပါခလုတ်များမှ ရွေးချယ်ပါ -\n"
     )
@@ -115,7 +111,7 @@ def send_packages_menu(chat_id):
     bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
 
 # ============================================================================
-# CUSTOMER PACKAGE SELECTION & SLIP UPLOAD
+# PACKAGE SELECTION
 # ============================================================================
 @bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
 def handle_buy_package(call):
@@ -135,33 +131,79 @@ def handle_buy_package(call):
     name, price, link = pkg
     user_selected_pkg[user_id] = pkg_id
 
+    markup = InlineKeyboardMarkup()
+    markup.row(InlineKeyboardButton("💳 ငွေလွှဲရန် အကောင့်/လင့်ခ် ကြည့်ရန်", url=PAYMENT_LINK))
+
     text = (
         f"✅ သင်ရွေးချယ်ထားသည် - **{name}**\n"
         f"💰 ကျသင့်ငွေ - **{price:,.0f} MMK**\n"
         "━━━━━━━━━━━━━━━━━━━\n"
-        "🏦 **ငွေလွှဲရန် အကောင့်များ:**\n"
-        "• KBZ Pay: 09XXXXXXXXX (အမည် - ထည့်ရန်)\n"
-        "• Wave Money: 09XXXXXXXXX (အမည် - ထည့်ရန်)\n\n"
+        f"🏦 **ငွေလွှဲရန် အကောင့်များကြည့်ရန် အောက်ပါ ခလုတ်ကို နှိပ်ပါ:**\n"
+        f"👉 {PAYMENT_LINK}\n\n"
         "📥 ငွေလွှဲပြီးပါက **ငွေလွှဲစလစ် (Slip) ပုံကို ဤချတ်ထဲသို့ တိုက်ရိုက် ပို့ပေးပါ**။ "
-        "AI မှ စစ်ဆေးပြီး Group လင့်ခ် အလိုအလျောက် ပို့ပေးပါမည်ရှင်။ ✨"
+        "AI မှ စလစ်စစ်ဆေးပြီး Group လင့်ခ် အလိုအလျောက် ပို့ပေးပါမည်ရှင်။ ✨"
     )
     bot.answer_callback_query(call.id)
-    bot.send_message(call.message.chat.id, text, parse_mode="Markdown")
+    bot.send_message(call.message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
 
 # ============================================================================
-# AI SLIP VERIFICATION & AUTO INVITE LINK
+# MULTILINGUAL AI CHATBOT HANDLER (မြန်မာ၊ ရှမ်း၊ ထိုင်း၊ တရုတ်၊ အင်္ဂလိပ်)
+# ============================================================================
+@bot.message_handler(func=lambda msg: msg.from_user.id != ADMIN_ID, content_types=['text'])
+def handle_customer_chat(message):
+    user_text = message.text.strip()
+
+    conn = sqlite3.connect('vip_bot.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, price FROM packages")
+    pkgs = cursor.fetchall()
+    conn.close()
+
+    pkg_info_str = "\n".join([f"- {name}: {price:,.0f} MMK" for name, price in pkgs])
+
+    system_prompt = (
+        "You are a friendly, polite, and intelligent Customer Service AI Assistant for a Telegram VIP Channel Sales Bot.\n"
+        "MULTILINGUAL SUPPORT REQUIREMENT:\n"
+        "Detect the language used by the user in their message and RESPOND IN THE EXACT SAME LANGUAGE.\n"
+        "Supported primary languages: Myanmar (မြန်မာ), Shan (တႆး), Thai (ไทย), Chinese (中文), and English.\n\n"
+        f"CURRENT VIP PACKAGES & PRICES:\n{pkg_info_str}\n\n"
+        f"PAYMENT DETAILS LINK: {PAYMENT_LINK}\n\n"
+        "INSTRUCTIONS FOR YOU:\n"
+        "1. Detect the user's language and respond naturally, warmly, and politely in that same language.\n"
+        "2. Answer questions about prices, available VIP packages, and payment methods accurately.\n"
+        "3. Explain that they can start buying by clicking /start or selecting a package, then pay using the payment link and send the payment slip image right here in the chat.\n"
+        "4. Keep the output helpful, concise, well-formatted, and human-like."
+    )
+
+    try:
+        bot.send_chat_action(message.chat.id, 'typing')
+        
+        response = ai_client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=[system_prompt, f"Customer Message: {user_text}"]
+        )
+        
+        reply_text = response.text.strip()
+        bot.send_message(message.chat.id, reply_text)
+
+    except Exception as e:
+        print(f"Chat AI Error: {e}")
+        bot.send_message(message.chat.id, "မင်္ဂလာပါရှင်! VIP Member ဝယ်ယူရန် /start ကို နှိပ်၍ Package ရွေးချယ်နိုင်ပါတယ်ရှင်။ ✨")
+
+# ============================================================================
+# MULTILINGUAL AI SLIP VERIFICATION
 # ============================================================================
 @bot.message_handler(content_types=['photo'])
 def handle_slip_photo(message):
     user_id = message.from_user.id
 
     if user_id == ADMIN_ID:
-        # Admin ပို့သော ပုံဖြစ်ပါက ကျော်မည်
+        bot.send_message(message.chat.id, "ℹ️ Admin ပို့သော ပုံဖြစ်သဖြင့် စလစ်စစ်ဆေးခြင်း မပြုလုပ်ပါ။")
         return
 
     pkg_id = user_selected_pkg.get(user_id)
     if not pkg_id:
-        bot.send_message(message.chat.id, "❌ ကျေးဇူးပြု၍ ပထမဦးစွာ ဝယ်ယူမည့် Package ကို အရင်ရွေးချယ်ပေးပါရှင်။ /start ကို နှိပ်ပါ။")
+        bot.send_message(message.chat.id, "❌ ကျေးဇူးပြု၍ ပထမဦးစွာ ဝယ်ယူမည့် Package ကို ရွေးချယ်ပေးပါရှင်။ /start ကို နှိပ်ပါ။")
         return
 
     conn = sqlite3.connect('vip_bot.db')
@@ -171,6 +213,7 @@ def handle_slip_photo(message):
     conn.close()
 
     pkg_name, expected_price, group_link = pkg
+    current_time_str = get_mmt_now().strftime('%Y-%m-%d %H:%M:%S')
 
     bot.send_message(message.chat.id, "⏳ ငွေလွှဲစလစ်ကို AI ဖြင့် စစ်ဆေးနေပါပြီ ခဏစောင့်ပါ...")
 
@@ -185,12 +228,17 @@ def handle_slip_photo(message):
         gemini_file = ai_client.files.upload(file=temp_slip_path)
 
         prompt = (
-            f"Analyze this payment slip image carefully. "
-            f"Check if it's a valid transfer slip and if the amount is at least {expected_price} MMK.\n"
-            "Answer strictly in this format:\n"
-            "Valid: YES or NO\n"
-            "Amount: [extracted number only or 0]\n"
-            "Note: [short reason]"
+            f"You are a strict payment slip verification AI for a business.\n"
+            f"Current Myanmar Standard Time (MMT) right now: {current_time_str}.\n"
+            f"Expected package price: {expected_price} MMK.\n\n"
+            "RULES FOR VERIFICATION:\n"
+            "1. Currency / Payment Type Check:\n"
+            "   - IF MMK Slip (KBZPay, Wave, Bank): Receiver Name MUST contain 'Mg Nyein Chan' or 'Nyein Chan'. Time on slip must be within 5 minutes of current MMT time. Amount must match or exceed expected MMK price.\n"
+            "   - IF Thai Baht (THB) Slip: Receiver Name MUST contain 'Aung Kyaw Myint' or 'nan noon inter'. Time difference can be up to 30 minutes from MMT time.\n"
+            "   - IF Receiver Name does NOT match these exact names, REJECT the slip.\n"
+            "2. Output strictly in this format:\n"
+            "Valid: YES (or NO)\n"
+            "Reason: [Short polite explanation matching the slip's native language context or Myanmar/English]"
         )
 
         response = ai_client.models.generate_content(
@@ -199,13 +247,11 @@ def handle_slip_photo(message):
         )
 
         ai_result = response.text.strip()
-        print(f"AI Slip Result: {ai_result}")
 
         if os.path.exists(temp_slip_path):
             os.remove(temp_slip_path)
 
         if "Valid: YES" in ai_result:
-            # Database ထဲသို့ ရောင်းအား မှတ်တမ်းတင်မည်
             now_str = get_mmt_now().strftime('%Y-%m-%d %H:%M:%S')
             conn = sqlite3.connect('vip_bot.db')
             cursor = conn.cursor()
@@ -214,21 +260,22 @@ def handle_slip_photo(message):
             conn.commit()
             conn.close()
 
-            # State ရှင်းမည်
             user_selected_pkg.pop(user_id, None)
 
             success_text = (
                 f"✅ **စလစ် စစ်ဆေးမှု အောင်မြင်ပါသည်!** 🎉\n"
                 f"📌 ဝယ်ယူသည့် Package: **{pkg_name}**\n\n"
-                f"🔗 **သင့်အတွက် Group ဖိတ်ကြားချက် လင့်ခ်:**\n"
+                f"🔗 **သင့်အတွက် VIP Group ဖိတ်ကြားချက် လင့်ခ်:**\n"
                 f"👉 {group_link}\n\n"
-                "အဆင်ပြေပါစေရှင်! ✨"
+                "ကျေးဇူးတင်ပါသည်ရှင်! ✨"
             )
             bot.send_message(message.chat.id, success_text, parse_mode="Markdown")
         else:
             fail_text = (
-                "❌ **စလစ် စစ်ဆေး၍ မရပါ သို့မဟုတ် ပမာဏ မမှန်ကန်ပါ။**\n"
-                "ကျေးဇူးပြု၍ စလစ်ပုံ မှန်ကန်မှု ရှိမရှိ စစ်ဆေးပြီး ပြန်လည် ပို့ပေးပါရှင်။ 🙏"
+                "❌ **စလစ် စစ်ဆေးမှု မအောင်မြင်ပါ။**\n"
+                "━━━━━━━━━━━━━━━━━━━\n"
+                f"💡 **အကြောင်းအရင်း -**\n{ai_result}\n\n"
+                f"ကျေးဇူးပြု၍ စလစ်ပုံ မှန်ကန်မှု ရှိမရှိ ပြန်လည်စစ်ဆေးပြီး ပို့ပေးပါရှင်။ သို့မဟုတ် {PAYMENT_LINK} တွင် စစ်ဆေးနိုင်ပါသည်။ 🙏"
             )
             bot.send_message(message.chat.id, fail_text, parse_mode="Markdown")
 
@@ -281,7 +328,7 @@ def edit_specific_pkg(call):
         "ဥပမာ: `35000 https://t.me/+xyz123`"
     )
     markup = InlineKeyboardMarkup()
-    markup.row(InlineKeyboardButton("🔙 ကာရန် / უკან", callback_data="admin_edit_pkgs"))
+    markup.row(InlineKeyboardButton("🔙 မီးနူးသို့", callback_data="admin_edit_pkgs"))
     bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda msg: msg.from_user.id == ADMIN_ID, content_types=['text'])
@@ -309,21 +356,20 @@ def handle_admin_text(message):
             except ValueError:
                 pass
         
-        bot.send_message(message.chat.id, "❌ ပုံစံ မှားယွင်းနေပါသည်။ ဥပမာ - `35000 https://t.me/+xyz123` ဟု ပုံစံမှန် ရိုက်ထည့်ပေးပါ။")
+        bot.send_message(message.chat.id, "❌ ပုံစံ မှားယွင်းနေပါသည်။ ဥပမာ - `35000 https://t.me/+xyz123` ဟု ရိုက်ထည့်ပေးပါ။")
 
 @bot.callback_query_handler(func=lambda call: call.data == "admin_view_sales")
 def admin_view_sales(call):
     if call.from_user.id != ADMIN_ID:
         return
     
-    conn = sqlite3.connect('vip_bot.db')
+    conn = sqlite3.connect('vip_db.db')
     cursor = conn.cursor()
     cursor.execute("SELECT amount, package_name, date FROM transactions ORDER BY id DESC LIMIT 10")
     rows = cursor.fetchall()
     conn.close()
 
     text = "📊 **နောက်ဆုံးရောင်းအား မှတ်တမ်း (၁၀ ခု)**\n━━━━━━━━━━━━━━━━━━━\n"
-    total_sales = sum(r[0] for r in rows) if rows else 0
     if not rows:
         text += "ရောင်းအား မှတ်တမ်း မရှိသေးပါ။\n"
     else:
@@ -349,5 +395,5 @@ def admin_back_main(call):
 # MAIN
 # ============================================================================
 if __name__ == "__main__":
-    print("VIP Member Bot with Admin Link/Price Control is running...")
+    print("Multilingual VIP Bot is running...")
     bot.infinity_polling(skip_pending=True)

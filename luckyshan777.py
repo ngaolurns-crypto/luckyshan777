@@ -6,9 +6,9 @@ import os
 from google import genai
 
 # ============================================================================
-# CONFIGURATION
+# CONFIGURATION (Updated with New Bot Token)
 # ============================================================================
-BOT_TOKEN = "8872734998:AAGaLOgwSrw4vNgERziaCH1cTGFqnaJaNJ4"
+BOT_TOKEN = "8674828979:AAHktLPCEnsxSH6ypBy_8q6Ie5b_FIFFw1U"
 GEMINI_API_KEY = "AQ.Ab8RN6JxVySBYSvVko8R_EeafKE_Hhli1zS2sok1YevqqrxREQ"
 ADMIN_ID = 8065105992
 
@@ -50,7 +50,7 @@ def init_db():
         )
     ''')
     
-    # ဈေးနှုန်းသစ်များ ထည့်သွင်းခြင်း (MMK နှင့် THB နှစ်မျိုးစလုံး)
+    # VIP Packages ၇ ခုနှင့် ဈေးနှုန်းများ (MMK / THB)
     default_packages = [
         ('all_in', 'အကုန်ဝင် (All Access)', 50000, 300, 'https://t.me/+n4-uKuYVkZY3YWFl'),
         ('shan', 'ရှမ်းကား', 30000, 250, 'https://t.me/+3JPO0ZdkgHdmYjNl'),
@@ -403,5 +403,5 @@ def admin_back_main(call):
 # MAIN
 # ============================================================================
 if __name__ == "__main__":
-    print("Multilingual VIP Bot with MMK & THB Prices is running...")
+    print("Multilingual VIP Bot is running successfully with New Token...")
     bot.infinity_polling(skip_pending=True)

@@ -24,7 +24,7 @@ def get_mmt_now():
     return datetime.now(MMT)
 
 # ============================================================================
-# DATABASE SETUP
+# DATABASE SETUP (Packages & Prices in MMK / THB)
 # ============================================================================
 def init_db():
     conn = sqlite3.connect('vip_bot.db', check_same_thread=False)
@@ -44,24 +44,26 @@ def init_db():
         CREATE TABLE IF NOT EXISTS packages (
             id TEXT PRIMARY KEY,
             name TEXT,
-            price REAL,
+            price_mmk REAL,
+            price_thb REAL,
             link TEXT
         )
     ''')
     
+    # ဈေးနှုန်းသစ်များ ထည့်သွင်းခြင်း (MMK နှင့် THB နှစ်မျိုးစလုံး)
     default_packages = [
-        ('all_in', 'အကုန်ဝင် (All Access)', 50000, 'https://t.me/+n4-uKuYVkZY3YWFl'),
-        ('shan', 'ရှမ်းကား', 30000, 'https://t.me/+3JPO0ZdkgHdmYjNl'),
-        ('kalay', 'ကလေးကား', 10000, 'လင့်ခ်မရှိသေးပါ'),
-        ('parking', 'ပါကင်', 10000, 'လင့်ခ်မရှိသေးပါ'),
-        ('cele', 'မြန်မာဆယ်လီ', 10000, 'လင့်ခ်မရှိသေးပါ'),
-        ('china', 'တရုတ်ကား/နိုင်ငံခြား', 10000, 'လင့်ခ်မရှိသေးပါ'),
-        ('solo', 'Solo', 10000, 'လင့်ခ်မရှိသေးပါ')
+        ('all_in', 'အကုန်ဝင် (All Access)', 50000, 300, 'https://t.me/+n4-uKuYVkZY3YWFl'),
+        ('shan', 'ရှမ်းကား', 30000, 250, 'https://t.me/+3JPO0ZdkgHdmYjNl'),
+        ('kalay', 'ကလေးကား', 10000, 100, 'လင့်ခ်မရှိသေးပါ'),
+        ('parking', 'ပါကင်', 10000, 100, 'လင့်ခ်မရှိသေးပါ'),
+        ('cele', 'မြန်မာဆယ်လီ', 10000, 100, 'လင့်ခ်မရှိသေးပါ'),
+        ('china', 'တရုတ်ကား/နိုင်ငံခြား', 10000, 100, 'လင့်ခ်မရှိသေးပါ'),
+        ('solo', 'Solo', 10000, 100, 'လင့်ခ်မရှိသေးပါ')
     ]
     
-    for pkg_id, name, price, link in default_packages:
-        cursor.execute("INSERT OR IGNORE INTO packages (id, name, price, link) VALUES (?, ?, ?, ?)", 
-                       (pkg_id, name, price, link))
+    for pkg_id, name, price_mmk, price_thb, link in default_packages:
+        cursor.execute("INSERT OR IGNORE INTO packages (id, name, price_mmk, price_thb, link) VALUES (?, ?, ?, ?, ?)", 
+                       (pkg_id, name, price_mmk, price_thb, link))
         
     conn.commit()
     conn.close()
@@ -94,7 +96,7 @@ def handle_start(message):
 def send_packages_menu(chat_id):
     conn = sqlite3.connect('vip_bot.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, price FROM packages")
+    cursor.execute("SELECT id, name, price_mmk, price_thb FROM packages")
     pkgs = cursor.fetchall()
     conn.close()
 
@@ -105,8 +107,9 @@ def send_packages_menu(chat_id):
     )
     
     markup = InlineKeyboardMarkup()
-    for pkg_id, name, price in pkgs:
-        markup.row(InlineKeyboardButton(f"📌 {name} - {price:,.0f} MMK", callback_data=f"buy_{pkg_id}"))
+    for pkg_id, name, p_mmk, p_thb in pkgs:
+        btn_text = f"📌 {name} - {p_mmk:,.0f} MMK / {p_thb} THB"
+        markup.row(InlineKeyboardButton(btn_text, callback_data=f"buy_{pkg_id}"))
 
     bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
 
@@ -120,7 +123,7 @@ def handle_buy_package(call):
 
     conn = sqlite3.connect('vip_bot.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT name, price, link FROM packages WHERE id = ?", (pkg_id,))
+    cursor.execute("SELECT name, price_mmk, price_thb, link FROM packages WHERE id = ?", (pkg_id,))
     pkg = cursor.fetchone()
     conn.close()
 
@@ -128,7 +131,7 @@ def handle_buy_package(call):
         bot.answer_callback_query(call.id, "Package မရှိတော့ပါ။")
         return
 
-    name, price, link = pkg
+    name, p_mmk, p_thb, link = pkg
     user_selected_pkg[user_id] = pkg_id
 
     markup = InlineKeyboardMarkup()
@@ -136,7 +139,7 @@ def handle_buy_package(call):
 
     text = (
         f"✅ သင်ရွေးချယ်ထားသည် - **{name}**\n"
-        f"💰 ကျသင့်ငွေ - **{price:,.0f} MMK**\n"
+        f"💰 ကျသင့်ငွေ - **{p_mmk:,.0f} MMK** (သို့မဟုတ်) **{p_thb} THB**\n"
         "━━━━━━━━━━━━━━━━━━━\n"
         f"🏦 **ငွေလွှဲရန် အကောင့်များကြည့်ရန် အောက်ပါ ခလုတ်ကို နှိပ်ပါ:**\n"
         f"👉 {PAYMENT_LINK}\n\n"
@@ -153,13 +156,17 @@ def handle_buy_package(call):
 def handle_customer_chat(message):
     user_text = message.text.strip()
 
+    if user_text.lower() in ['/start', '/menu']:
+        handle_start(message)
+        return
+
     conn = sqlite3.connect('vip_bot.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT name, price FROM packages")
+    cursor.execute("SELECT name, price_mmk, price_thb FROM packages")
     pkgs = cursor.fetchall()
     conn.close()
 
-    pkg_info_str = "\n".join([f"- {name}: {price:,.0f} MMK" for name, price in pkgs])
+    pkg_info_str = "\n".join([f"- {name}: {p_mmk:,.0f} MMK ({p_thb} THB)" for name, p_mmk, p_thb in pkgs])
 
     system_prompt = (
         "You are a friendly, polite, and intelligent Customer Service AI Assistant for a Telegram VIP Channel Sales Bot.\n"
@@ -170,7 +177,7 @@ def handle_customer_chat(message):
         f"PAYMENT DETAILS LINK: {PAYMENT_LINK}\n\n"
         "INSTRUCTIONS FOR YOU:\n"
         "1. Detect the user's language and respond naturally, warmly, and politely in that same language.\n"
-        "2. Answer questions about prices, available VIP packages, and payment methods accurately.\n"
+        "2. Answer questions about prices (both MMK and THB), available VIP packages, and payment methods accurately.\n"
         "3. Explain that they can start buying by clicking /start or selecting a package, then pay using the payment link and send the payment slip image right here in the chat.\n"
         "4. Keep the output helpful, concise, well-formatted, and human-like."
     )
@@ -191,7 +198,7 @@ def handle_customer_chat(message):
         bot.send_message(message.chat.id, "မင်္ဂလာပါရှင်! VIP Member ဝယ်ယူရန် /start ကို နှိပ်၍ Package ရွေးချယ်နိုင်ပါတယ်ရှင်။ ✨")
 
 # ============================================================================
-# MULTILINGUAL AI SLIP VERIFICATION
+# MULTILINGUAL AI SLIP VERIFICATION (MMK & THB Rules)
 # ============================================================================
 @bot.message_handler(content_types=['photo'])
 def handle_slip_photo(message):
@@ -208,11 +215,11 @@ def handle_slip_photo(message):
 
     conn = sqlite3.connect('vip_bot.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT name, price, link FROM packages WHERE id = ?", (pkg_id,))
+    cursor.execute("SELECT name, price_mmk, price_thb, link FROM packages WHERE id = ?", (pkg_id,))
     pkg = cursor.fetchone()
     conn.close()
 
-    pkg_name, expected_price, group_link = pkg
+    pkg_name, exp_mmk, exp_thb, group_link = pkg
     current_time_str = get_mmt_now().strftime('%Y-%m-%d %H:%M:%S')
 
     bot.send_message(message.chat.id, "⏳ ငွေလွှဲစလစ်ကို AI ဖြင့် စစ်ဆေးနေပါပြီ ခဏစောင့်ပါ...")
@@ -230,11 +237,11 @@ def handle_slip_photo(message):
         prompt = (
             f"You are a strict payment slip verification AI for a business.\n"
             f"Current Myanmar Standard Time (MMT) right now: {current_time_str}.\n"
-            f"Expected package price: {expected_price} MMK.\n\n"
+            f"Expected package price: {exp_mmk} MMK OR {exp_thb} THB.\n\n"
             "RULES FOR VERIFICATION:\n"
             "1. Currency / Payment Type Check:\n"
-            "   - IF MMK Slip (KBZPay, Wave, Bank): Receiver Name MUST contain 'Mg Nyein Chan' or 'Nyein Chan'. Time on slip must be within 5 minutes of current MMT time. Amount must match or exceed expected MMK price.\n"
-            "   - IF Thai Baht (THB) Slip: Receiver Name MUST contain 'Aung Kyaw Myint' or 'nan noon inter'. Time difference can be up to 30 minutes from MMT time.\n"
+            "   - IF MMK Slip (KBZPay, Wave, Bank): Receiver Name MUST contain 'Mg Nyein Chan' or 'Nyein Chan'. Time on slip must be within 5 minutes of current MMT time. Amount must match or exceed expected MMK price ({exp_mmk} MMK).\n"
+            "   - IF Thai Baht (THB) Slip: Receiver Name MUST contain 'Aung Kyaw Myint' or 'nan noon inter'. Time difference can be up to 30 minutes from MMT time. Amount must match or exceed expected THB price ({exp_thb} THB).\n"
             "   - IF Receiver Name does NOT match these exact names, REJECT the slip.\n"
             "2. Output strictly in this format:\n"
             "Valid: YES (or NO)\n"
@@ -256,7 +263,7 @@ def handle_slip_photo(message):
             conn = sqlite3.connect('vip_bot.db')
             cursor = conn.cursor()
             cursor.execute("INSERT INTO transactions (user_id, amount, package_name, date) VALUES (?, ?, ?, ?)",
-                           (user_id, expected_price, pkg_name, now_str))
+                           (user_id, exp_mmk, pkg_name, now_str))
             conn.commit()
             conn.close()
 
@@ -312,20 +319,20 @@ def edit_specific_pkg(call):
 
     conn = sqlite3.connect('vip_bot.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT name, price, link FROM packages WHERE id = ?", (pkg_id,))
+    cursor.execute("SELECT name, price_mmk, price_thb, link FROM packages WHERE id = ?", (pkg_id,))
     pkg = cursor.fetchone()
     conn.close()
 
-    name, price, link = pkg
+    name, p_mmk, p_thb, link = pkg
     admin_states[ADMIN_ID] = {"action": "editing_pkg", "pkg_id": pkg_id}
 
     text = (
         f"📦 **Package:** {name}\n"
-        f"💰 **လက်ရှိ ဈေးနှုန်း:** {price:,.0f} MMK\n"
+        f"💰 **လက်ရှိ ဈေးနှုန်း:** {p_mmk:,.0f} MMK / {p_thb} THB\n"
         f"🔗 **လက်ရှိ လင့်ခ်:** {link}\n\n"
         "✍️ **အသစ်ပြောင်းလဲရန် ပုံစံအတိုင်း ရိုက်ပို့ပေးပါ:**\n"
-        "`[ဈေးနှုန်း] [လင့်ခ်]`\n"
-        "ဥပမာ: `35000 https://t.me/+xyz123`"
+        "`[MMK ဈေးနှုန်း] [THB ဈေးနှုန်း] [လင့်ခ်]`\n"
+        "ဥပမာ: `35000 250 https://t.me/+xyz123`"
     )
     markup = InlineKeyboardMarkup()
     markup.row(InlineKeyboardButton("🔙 မီးနူးသို့", callback_data="admin_edit_pkgs"))
@@ -336,34 +343,35 @@ def handle_admin_text(message):
     state = admin_states.get(ADMIN_ID)
     if state and state.get("action") == "editing_pkg":
         pkg_id = state.get("pkg_id")
-        parts = message.text.strip().split(maxsplit=1)
+        parts = message.text.strip().split(maxsplit=2)
         
-        if len(parts) == 2:
+        if len(parts) >= 3:
             try:
-                new_price = float(parts[0].replace(",", ""))
-                new_link = parts[1].strip()
+                new_mmk = float(parts[0].replace(",", ""))
+                new_thb = float(parts[1].replace(",", ""))
+                new_link = parts[2].strip()
 
                 conn = sqlite3.connect('vip_bot.db')
                 cursor = conn.cursor()
-                cursor.execute("UPDATE packages SET price = ?, link = ? WHERE id = ?", (new_price, new_link, pkg_id))
+                cursor.execute("UPDATE packages SET price_mmk = ?, price_thb = ?, link = ? WHERE id = ?", (new_mmk, new_thb, new_link, pkg_id))
                 conn.commit()
                 conn.close()
 
                 admin_states.pop(ADMIN_ID, None)
-                bot.send_message(message.chat.id, f"✅ Package အချက်အလက် အောင်မြင်စွာ ပြောင်းလဲပြီးပါပြီရှင်! ✨")
+                bot.send_message(message.chat.id, f"✅ Package ဈေးနှုန်းနှင့် လင့်ခ် အောင်မြင်စွာ ပြောင်းလဲပြီးပါပြီရှင်! ✨")
                 send_packages_menu(message.chat.id)
                 return
             except ValueError:
                 pass
         
-        bot.send_message(message.chat.id, "❌ ပုံစံ မှားယွင်းနေပါသည်။ ဥပမာ - `35000 https://t.me/+xyz123` ဟု ရိုက်ထည့်ပေးပါ။")
+        bot.send_message(message.chat.id, "❌ ပုံစံ မှားယွင်းနေပါသည်။ ဥပမာ - `35000 250 https://t.me/+xyz123` ဟု ရိုက်ထည့်ပေးပါ။")
 
 @bot.callback_query_handler(func=lambda call: call.data == "admin_view_sales")
 def admin_view_sales(call):
     if call.from_user.id != ADMIN_ID:
         return
     
-    conn = sqlite3.connect('vip_db.db')
+    conn = sqlite3.connect('vip_bot.db')
     cursor = conn.cursor()
     cursor.execute("SELECT amount, package_name, date FROM transactions ORDER BY id DESC LIMIT 10")
     rows = cursor.fetchall()
@@ -395,5 +403,5 @@ def admin_back_main(call):
 # MAIN
 # ============================================================================
 if __name__ == "__main__":
-    print("Multilingual VIP Bot is running...")
+    print("Multilingual VIP Bot with MMK & THB Prices is running...")
     bot.infinity_polling(skip_pending=True)

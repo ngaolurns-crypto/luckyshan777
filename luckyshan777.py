@@ -1,407 +1,499 @@
-import sqlite3
-import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime, timedelta, timezone
+import json
+import logging
 import os
-from google import genai
+import threading
+import time
+import requests
+import telebot
+from telebot.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
-# ============================================================================
-# CONFIGURATION (Updated with New Bot Token)
-# ============================================================================
-BOT_TOKEN = "8674828979:AAHktLPCEnsxSH6ypBy_8q6Ie5b_FIFFw1U"
-GEMINI_API_KEY = "AQ.Ab8RN6JxVySBYSvVko8R_EeafKE_Hhli1zS2sok1YevqqrxREQ"
-ADMIN_ID = 8065105992
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
 
-PAYMENT_LINK = "https://t.me/payment3444"
+BASE_URL = "https://ag.buffalo688.com"
+POLL_INTERVAL = 3
 
-bot = telebot.TeleBot(BOT_TOKEN)
-ai_client = genai.Client(api_key=GEMINI_API_KEY)
+# ဝင်ရောက်ထားသော အချက်အလက်များ
+BOT_TOKEN = "9024731744:AAFogr_WEnT9MRFK-5C9y2RA7E-YOKIx7FY"
+ADMIN_ID = 8022481594
+USERNAME = "bf11425225"
+PASSWORD = "Sarmleng@1"
+MAIN_ADMIN_ID = 5546899291
+MM_TZ = timezone(timedelta(hours=6, minutes=30))
 
-# မြန်မာစံတော်ချိန် (MMT = UTC + 6:30)
-MMT = timezone(timedelta(hours=6, minutes=30))
 
-def get_mmt_now():
-    return datetime.now(MMT)
+class BuffaloAPIInstance:
 
-# ============================================================================
-# DATABASE SETUP (Packages & Prices in MMK / THB)
-# ============================================================================
-def init_db():
-    conn = sqlite3.connect('vip_bot.db', check_same_thread=False)
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            amount REAL,
-            package_name TEXT,
-            date TEXT
+  def __init__(self, username, password):
+    self.username = username
+    self.password = password
+    self.token = None
+    self.lock = threading.Lock()
+    self.login()
+
+  def login(self):
+    with self.lock:
+      try:
+        r = requests.post(
+            f"{BASE_URL}/api/auth/login",
+            json={
+                "name": self.username,
+                "password": self.password,
+                "captcha": "",
+                "captcha_key": "",
+                "roles": "commissioner",
+            },
+            headers={"Accept": "application/json"},
+            timeout=30,
         )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS packages (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            price_mmk REAL,
-            price_thb REAL,
-            link TEXT
-        )
-    ''')
-    
-    # VIP Packages ၇ ခုနှင့် ဈေးနှုန်းများ (MMK / THB)
-    default_packages = [
-        ('all_in', 'အကုန်ဝင် (All Access)', 50000, 300, 'https://t.me/+n4-uKuYVkZY3YWFl'),
-        ('shan', 'ရှမ်းကား', 30000, 250, 'https://t.me/+3JPO0ZdkgHdmYjNl'),
-        ('kalay', 'ကလေးကား', 10000, 100, 'လင့်ခ်မရှိသေးပါ'),
-        ('parking', 'ပါကင်', 10000, 100, 'လင့်ခ်မရှိသေးပါ'),
-        ('cele', 'မြန်မာဆယ်လီ', 10000, 100, 'လင့်ခ်မရှိသေးပါ'),
-        ('china', 'တရုတ်ကား/နိုင်ငံခြား', 10000, 100, 'လင့်ခ်မရှိသေးပါ'),
-        ('solo', 'Solo', 10000, 100, 'လင့်ခ်မရှိသေးပါ')
-    ]
-    
-    for pkg_id, name, price_mmk, price_thb, link in default_packages:
-        cursor.execute("INSERT OR IGNORE INTO packages (id, name, price_mmk, price_thb, link) VALUES (?, ?, ?, ?, ?)", 
-                       (pkg_id, name, price_mmk, price_thb, link))
-        
-    conn.commit()
-    conn.close()
+        data = r.json()
+        if data.get("status") == "success" and data.get("token"):
+          self.token = data["token"]
+          return True
+        return False
+      except Exception as e:
+        print(f"Login error for {self.username}: {e}")
+        return False
 
-init_db()
-
-user_selected_pkg = {}
-admin_states = {}
-
-# ============================================================================
-# START / MENU
-# ============================================================================
-@bot.message_handler(commands=['start', 'menu'])
-def handle_start(message):
-    user_id = message.from_user.id
-
-    if user_id == ADMIN_ID:
-        text = (
-            "👑 **Admin စီမံခန့်ခွဲမှု ပန်နယ်** 👑\n"
-            "━━━━━━━━━━━━━━━━━━━\n"
-            "ချန်နယ်လင့်ခ်များနှင့် ဈေးနှုန်းများကို ဤနေရာတွင် ပြင်ဆင်နိုင်ပါသည်။"
-        )
-        markup = InlineKeyboardMarkup()
-        markup.row(InlineKeyboardButton("⚙️ VIP Packages & Links များကို ပြင်ဆင်ရန်", callback_data="admin_edit_pkgs"))
-        markup.row(InlineKeyboardButton("📊 ရောင်းအားစာရင်း ကြည့်ရန်", callback_data="admin_view_sales"))
-        bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
-    else:
-        send_packages_menu(message.chat.id)
-
-def send_packages_menu(chat_id):
-    conn = sqlite3.connect('vip_bot.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name, price_mmk, price_thb FROM packages")
-    pkgs = cursor.fetchall()
-    conn.close()
-
-    text = (
-        "🌟 **VIP Member Store** 🌟\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
-        "ဝယ်ယူလိုသော Package ကို အောက်ပါခလုတ်များမှ ရွေးချယ်ပါ -\n"
-    )
-    
-    markup = InlineKeyboardMarkup()
-    for pkg_id, name, p_mmk, p_thb in pkgs:
-        btn_text = f"📌 {name} - {p_mmk:,.0f} MMK / {p_thb} THB"
-        markup.row(InlineKeyboardButton(btn_text, callback_data=f"buy_{pkg_id}"))
-
-    bot.send_message(chat_id, text, reply_markup=markup, parse_mode="Markdown")
-
-# ============================================================================
-# PACKAGE SELECTION
-# ============================================================================
-@bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
-def handle_buy_package(call):
-    user_id = call.from_user.id
-    pkg_id = call.data.split("_", 1)[1]
-
-    conn = sqlite3.connect('vip_bot.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT name, price_mmk, price_thb, link FROM packages WHERE id = ?", (pkg_id,))
-    pkg = cursor.fetchone()
-    conn.close()
-
-    if not pkg:
-        bot.answer_callback_query(call.id, "Package မရှိတော့ပါ။")
-        return
-
-    name, p_mmk, p_thb, link = pkg
-    user_selected_pkg[user_id] = pkg_id
-
-    markup = InlineKeyboardMarkup()
-    markup.row(InlineKeyboardButton("💳 ငွေလွှဲရန် အကောင့်/လင့်ခ် ကြည့်ရန်", url=PAYMENT_LINK))
-
-    text = (
-        f"✅ သင်ရွေးချယ်ထားသည် - **{name}**\n"
-        f"💰 ကျသင့်ငွေ - **{p_mmk:,.0f} MMK** (သို့မဟုတ်) **{p_thb} THB**\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
-        f"🏦 **ငွေလွှဲရန် အကောင့်များကြည့်ရန် အောက်ပါ ခလုတ်ကို နှိပ်ပါ:**\n"
-        f"👉 {PAYMENT_LINK}\n\n"
-        "📥 ငွေလွှဲပြီးပါက **ငွေလွှဲစလစ် (Slip) ပုံကို ဤချတ်ထဲသို့ တိုက်ရိုက် ပို့ပေးပါ**။ "
-        "AI မှ စလစ်စစ်ဆေးပြီး Group လင့်ခ် အလိုအလျောက် ပို့ပေးပါမည်ရှင်။ ✨"
-    )
-    bot.answer_callback_query(call.id)
-    bot.send_message(call.message.chat.id, text, reply_markup=markup, parse_mode="Markdown")
-
-# ============================================================================
-# MULTILINGUAL AI CHATBOT HANDLER (မြန်မာ၊ ရှမ်း၊ ထိုင်း၊ တရုတ်၊ အင်္ဂလိပ်)
-# ============================================================================
-@bot.message_handler(func=lambda msg: msg.from_user.id != ADMIN_ID, content_types=['text'])
-def handle_customer_chat(message):
-    user_text = message.text.strip()
-
-    if user_text.lower() in ['/start', '/menu']:
-        handle_start(message)
-        return
-
-    conn = sqlite3.connect('vip_bot.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT name, price_mmk, price_thb FROM packages")
-    pkgs = cursor.fetchall()
-    conn.close()
-
-    pkg_info_str = "\n".join([f"- {name}: {p_mmk:,.0f} MMK ({p_thb} THB)" for name, p_mmk, p_thb in pkgs])
-
-    system_prompt = (
-        "You are a friendly, polite, and intelligent Customer Service AI Assistant for a Telegram VIP Channel Sales Bot.\n"
-        "MULTILINGUAL SUPPORT REQUIREMENT:\n"
-        "Detect the language used by the user in their message and RESPOND IN THE EXACT SAME LANGUAGE.\n"
-        "Supported primary languages: Myanmar (မြန်မာ), Shan (တႆး), Thai (ไทย), Chinese (中文), and English.\n\n"
-        f"CURRENT VIP PACKAGES & PRICES:\n{pkg_info_str}\n\n"
-        f"PAYMENT DETAILS LINK: {PAYMENT_LINK}\n\n"
-        "INSTRUCTIONS FOR YOU:\n"
-        "1. Detect the user's language and respond naturally, warmly, and politely in that same language.\n"
-        "2. Answer questions about prices (both MMK and THB), available VIP packages, and payment methods accurately.\n"
-        "3. Explain that they can start buying by clicking /start or selecting a package, then pay using the payment link and send the payment slip image right here in the chat.\n"
-        "4. Keep the output helpful, concise, well-formatted, and human-like."
-    )
-
+  def request(self, method, endpoint, **kwargs):
+    if not self.token:
+      self.login()
+    headers = kwargs.pop("headers", {})
+    headers["Authorization"] = f"Bearer {self.token}"
+    headers["Accept"] = "application/json"
     try:
-        bot.send_chat_action(message.chat.id, 'typing')
-        
-        response = ai_client.models.generate_content(
-            model='gemini-1.5-flash',
-            contents=[system_prompt, f"Customer Message: {user_text}"]
-        )
-        
-        reply_text = response.text.strip()
-        bot.send_message(message.chat.id, reply_text)
-
+      r = requests.request(
+          method, f"{BASE_URL}{endpoint}", headers=headers, timeout=30, **kwargs
+      )
+      if r.status_code == 401:
+        if self.login():
+          headers["Authorization"] = f"Bearer {self.token}"
+          r = requests.request(
+              method,
+              f"{BASE_URL}{endpoint}",
+              headers=headers,
+              timeout=30,
+              **kwargs,
+          )
+      try:
+        return r.json()
+      except:
+        return None
     except Exception as e:
-        print(f"Chat AI Error: {e}")
-        bot.send_message(message.chat.id, "မင်္ဂလာပါရှင်! VIP Member ဝယ်ယူရန် /start ကို နှိပ်၍ Package ရွေးချယ်နိုင်ပါတယ်ရှင်။ ✨")
+      print(f"Request error: {e}")
+      return None
 
-# ============================================================================
-# MULTILINGUAL AI SLIP VERIFICATION (MMK & THB Rules)
-# ============================================================================
-@bot.message_handler(content_types=['photo'])
-def handle_slip_photo(message):
-    user_id = message.from_user.id
+  def list_pending_deposits(self):
+    data = self.request(
+        "POST",
+        "/api/admin/deposits",
+        json={"type": "pending", "page": 1, "limit": 50},
+    )
+    if data and data.get("success"):
+      return data.get("data", [])
+    return []
 
-    if user_id == ADMIN_ID:
-        bot.send_message(message.chat.id, "ℹ️ Admin ပို့သော ပုံဖြစ်သဖြင့် စလစ်စစ်ဆေးခြင်း မပြုလုပ်ပါ။")
-        return
+  def list_pending_withdraws(self):
+    data = self.request(
+        "POST",
+        "/api/admin/withdraws",
+        json={"type": "pending", "page": 1, "limit": 50},
+    )
+    if data and data.get("success"):
+      return data.get("data", [])
+    return []
 
-    pkg_id = user_selected_pkg.get(user_id)
-    if not pkg_id:
-        bot.send_message(message.chat.id, "❌ ကျေးဇူးပြု၍ ပထမဦးစွာ ဝယ်ယူမည့် Package ကို ရွေးချယ်ပေးပါရှင်။ /start ကို နှိပ်ပါ။")
-        return
+  def confirm_deposit(self, deposit_id, user_id, amount):
+    data = self.request(
+        "POST",
+        "/api/admin/deposits/confirm",
+        json={
+            "userId": user_id,
+            "amount": amount,
+            "depositId": deposit_id,
+            "promotion": None,
+            "turn_over_amount": None,
+        },
+    )
+    return data and data.get("success")
 
-    conn = sqlite3.connect('vip_bot.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT name, price_mmk, price_thb, link FROM packages WHERE id = ?", (pkg_id,))
-    pkg = cursor.fetchone()
-    conn.close()
+  def reject_deposit(self, deposit_id, amount):
+    data = self.request(
+        "PUT",
+        f"/api/deposits/{deposit_id}",
+        json={"status": "fail", "type": "status update", "amount": amount},
+    )
+    return data and data.get("success")
 
-    pkg_name, exp_mmk, exp_thb, group_link = pkg
-    current_time_str = get_mmt_now().strftime('%Y-%m-%d %H:%M:%S')
+  def confirm_withdraw(self, withdraw_id, user_id, amount):
+    data = self.request(
+        "POST",
+        "/api/admin/withdraws/confirm",
+        json={
+            "userId": user_id,
+            "amount": amount,
+            "withdrawId": withdraw_id,
+            "status": "confirm",
+            "reason": "",
+        },
+    )
+    return data and data.get("success")
 
-    bot.send_message(message.chat.id, "⏳ ငွေလွှဲစလစ်ကို AI ဖြင့် စစ်ဆေးနေပါပြီ ခဏစောင့်ပါ...")
+  def reject_withdraw(self, withdraw_id, user_id, amount, reason="Rejected"):
+    data = self.request(
+        "POST",
+        "/api/admin/withdraws/confirm",
+        json={
+            "userId": user_id,
+            "amount": amount,
+            "withdrawId": withdraw_id,
+            "status": "fail",
+            "reason": reason,
+        },
+    )
+    if not data or not data.get("success"):
+      data = self.request(
+          "PUT",
+          f"/api/withdraws/{withdraw_id}",
+          json={"status": "fail", "type": "status update", "amount": amount},
+      )
+    return data and data.get("success")
 
-    try:
-        file_info = bot.get_file(message.photo[-1].file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
+  def get_balance(self):
+    data = self.request("GET", "/api/auth/user")
+    return (
+        float(data["data"].get("amount", 0))
+        if data and data.get("data")
+        else 0
+    )
 
-        temp_slip_path = f"slip_{user_id}.jpg"
-        with open(temp_slip_path, 'wb') as new_file:
-            new_file.write(downloaded_file)
 
-        gemini_file = ai_client.files.upload(file=temp_slip_path)
+def run_single_buffalo_bot():
+  bot = telebot.TeleBot(BOT_TOKEN)
+  api = BuffaloAPIInstance(USERNAME, PASSWORD)
+  notified_deposits = set()
+  notified_withdraws = set()
+  polling_active = True
 
-        prompt = (
-            f"You are a strict payment slip verification AI for a business.\n"
-            f"Current Myanmar Standard Time (MMT) right now: {current_time_str}.\n"
-            f"Expected package price: {exp_mmk} MMK OR {exp_thb} THB.\n\n"
-            "RULES FOR VERIFICATION:\n"
-            "1. Currency / Payment Type Check:\n"
-            "   - IF MMK Slip (KBZPay, Wave, Bank): Receiver Name MUST contain 'Mg Nyein Chan' or 'Nyein Chan'. Time on slip must be within 5 minutes of current MMT time. Amount must match or exceed expected MMK price ({exp_mmk} MMK).\n"
-            "   - IF Thai Baht (THB) Slip: Receiver Name MUST contain 'Aung Kyaw Myint' or 'nan noon inter'. Time difference can be up to 30 minutes from MMT time. Amount must match or exceed expected THB price ({exp_thb} THB).\n"
-            "   - IF Receiver Name does NOT match these exact names, REJECT the slip.\n"
-            "2. Output strictly in this format:\n"
-            "Valid: YES (or NO)\n"
-            "Reason: [Short polite explanation matching the slip's native language context or Myanmar/English]"
+  def get_main_keyboard():
+    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row(
+        KeyboardButton("💰 Pending စစ်ရန်"), KeyboardButton("📊 လက်ကျန်စစ်ရန်")
+    )
+    markup.row(KeyboardButton("📈 နေ့စဉ်စာရင်းထုတ်ရန်"))
+    return markup
+
+  @bot.message_handler(commands=["start", "help"])
+  def handle_start(message):
+    if message.from_user.id not in [ADMIN_ID, MAIN_ADMIN_ID]:
+      return
+    bot.send_message(
+        message.chat.id,
+        (
+            "🤖 **Buffalo688 Admin Bot (Single)**\nUsername:"
+            " `{username}`\n\nအောက်ပါခလုတ်များကို အသုံးပြု၍ စစ်ဆေးနိုင်ပါသည် -"
+        ).format(username=USERNAME),
+        reply_markup=get_main_keyboard(),
+        parse_mode="Markdown",
+    )
+
+  @bot.message_handler(
+      func=lambda msg: msg.text in [
+          "💰 Pending စစ်ရန်",
+          "📊 လက်ကျန်စစ်ရန်",
+          "📈 နေ့စဉ်စာရင်းထုတ်ရန်",
+      ]
+      or msg.text in ["/pending", "/status", "/report"]
+  )
+  def handle_pending(message):
+    if message.from_user.id not in [ADMIN_ID, MAIN_ADMIN_ID]:
+      return
+
+    text = message.text
+    if text in ["💰 Pending စစ်ရန်", "/pending"]:
+      deposits = api.list_pending_deposits()
+      withdraws = api.list_pending_withdraws()
+      res_text = f"🔄 **Bot ({USERNAME}) ၏ လက်ရှိ Pending စာရင်းများ**\n━━━━━━━━━━━━━━━\n"
+      if deposits:
+        res_text += f"💰 **Pending Deposits ({len(deposits)}):**\n"
+        for d in deposits[:10]:
+          res_text += (
+              f"  • {d.get('user_name')} | `{d.get('amount'):,}` MMK | Slip:"
+              f" `{d.get('remark', 'N/A')}`\n"
+          )
+      else:
+        res_text += "💰 Pending Deposits: 0\n"
+
+      res_text += "\n"
+      if withdraws:
+        res_text += f"💸 **Pending Withdraws ({len(withdraws)}):**\n"
+        for w in withdraws[:10]:
+          res_text += (
+              f"  • {w.get('user_name')} | `{w.get('amount'):,}` MMK |"
+              f" {w.get('type')}\n"
+          )
+      else:
+        res_text += "💸 Pending Withdraws: 0\n"
+      bot.send_message(
+          message.chat.id, res_text, reply_markup=get_main_keyboard(), parse_mode="Markdown"
+      )
+    elif text in ["📊 လက်ကျန်စစ်ရန်", "/status"]:
+      balance = api.get_balance()
+      bot.send_message(
+          message.chat.id,
+          f"✅ Bot Active (`{USERNAME}`)\n💰 လက်ကျန် Unit: `{balance:,.0f}` MMK",
+          reply_markup=get_main_keyboard(),
+          parse_mode="Markdown",
+      )
+    elif text in ["📈 နေ့စဉ်စာရင်းထုတ်ရန်", "/report"]:
+      try:
+        now = datetime.now(MM_TZ)
+        yesterday = now - timedelta(days=1)
+        target_str1 = (
+            f"{yesterday.strftime('%b')} {yesterday.day},"
+            f" {yesterday.strftime('%Y')}"
         )
-
-        response = ai_client.models.generate_content(
-            model='gemini-1.5-flash',
-            contents=[gemini_file, prompt]
+        target_str2 = (
+            f"{yesterday.strftime('%b')} {yesterday.strftime('%d')},"
+            f" {yesterday.strftime('%Y')}"
         )
+        target_str3 = yesterday.strftime("%Y-%m-%d")
+        target_date_display = yesterday.strftime("%Y-%m-%d")
 
-        ai_result = response.text.strip()
-
-        if os.path.exists(temp_slip_path):
-            os.remove(temp_slip_path)
-
-        if "Valid: YES" in ai_result:
-            now_str = get_mmt_now().strftime('%Y-%m-%d %H:%M:%S')
-            conn = sqlite3.connect('vip_bot.db')
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO transactions (user_id, amount, package_name, date) VALUES (?, ?, ?, ?)",
-                           (user_id, exp_mmk, pkg_name, now_str))
-            conn.commit()
-            conn.close()
-
-            user_selected_pkg.pop(user_id, None)
-
-            success_text = (
-                f"✅ **စလစ် စစ်ဆေးမှု အောင်မြင်ပါသည်!** 🎉\n"
-                f"📌 ဝယ်ယူသည့် Package: **{pkg_name}**\n\n"
-                f"🔗 **သင့်အတွက် VIP Group ဖိတ်ကြားချက် လင့်ခ်:**\n"
-                f"👉 {group_link}\n\n"
-                "ကျေးဇူးတင်ပါသည်ရှင်! ✨"
+        total_deposit = 0
+        page = 1
+        while True:
+          data = api.request(
+              "POST",
+              "/api/admin/deposits",
+              json={"type": "all", "page": page, "limit": 100},
+          )
+          if not data or not data.get("data"):
+            break
+          for item in data["data"]:
+            item_date = str(item.get("date", "")) + str(
+                item.get("created_at", "")
             )
-            bot.send_message(message.chat.id, success_text, parse_mode="Markdown")
+            if (
+                target_str1 in item_date
+                or target_str2 in item_date
+                or target_str3 in item_date
+            ) and item.get("status") == "confirm":
+              amt = item.get("no_format_amount")
+              if amt is None:
+                amt = item.get("amount", 0)
+              total_deposit += float(amt)
+          page += 1
+
+        total_withdraw = 0
+        page = 1
+        while True:
+          data = api.request(
+              "POST",
+              "/api/admin/withdraws",
+              json={"type": "all", "page": page, "limit": 100},
+          )
+          if not data or not data.get("data"):
+            break
+          for item in data["data"]:
+            item_date = str(item.get("date", "")) + str(
+                item.get("created_at", "")
+            )
+            status = str(item.get("status", "")).lower()
+            if (
+                target_str1 in item_date
+                or target_str2 in item_date
+                or target_str3 in item_date
+            ) and (
+                status == "confirm"
+                or status == "approved"
+                or status == "success"
+            ):
+              amt = item.get("no_format_amount")
+              if amt is None:
+                amt = item.get("amount", 0)
+              total_withdraw += float(amt)
+          page += 1
+
+        profit_before = total_deposit - total_withdraw
+        if profit_before >= 0:
+          cost_28 = int(profit_before * 0.28)
+          net_profit = profit_before - cost_28
+          status_text = f"✅ **အမြတ် = {net_profit:,.0f} MMK**"
         else:
-            fail_text = (
-                "❌ **စလစ် စစ်ဆေးမှု မအောင်မြင်ပါ။**\n"
-                "━━━━━━━━━━━━━━━━━━━\n"
-                f"💡 **အကြောင်းအရင်း -**\n{ai_result}\n\n"
-                f"ကျေးဇူးပြု၍ စလစ်ပုံ မှန်ကန်မှု ရှိမရှိ ပြန်လည်စစ်ဆေးပြီး ပို့ပေးပါရှင်။ သို့မဟုတ် {PAYMENT_LINK} တွင် စစ်ဆေးနိုင်ပါသည်။ 🙏"
+          status_text = f"❌ **အရှုံး = {abs(profit_before):,.0f} MMK**"
+
+        report = (
+            f"📊 **Daily Report - {target_date_display}** (`{USERNAME}`)\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"💰 ထည့်ငွေ (Deposit): `{total_deposit:,.0f}` MMK\n"
+            f"💸 ထုတ်ငွေ (Withdraw): `{total_withdraw:,.0f}` MMK\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"📊 Net (ထည့် - ထုတ်): `{profit_before:,.0f}` MMK\n"
+            f"{status_text}"
+        )
+        bot.send_message(
+            message.chat.id,
+            report,
+            reply_markup=get_main_keyboard(),
+            parse_mode="Markdown",
+        )
+      except Exception as e:
+        bot.send_message(
+            message.chat.id,
+            f"❌ Report error: {e}",
+            reply_markup=get_main_keyboard(),
+        )
+
+  def polling_task():
+    while polling_active:
+      try:
+        deposits = api.list_pending_deposits()
+        for dep in deposits:
+          dep_id = dep.get("id")
+          if dep_id and dep_id not in notified_deposits:
+            notified_deposits.add(dep_id)
+            markup = InlineKeyboardMarkup()
+            markup.row(
+                InlineKeyboardButton(
+                    "✅ Confirm",
+                    callback_data=(
+                        f"dep_confirm_{dep_id}_{dep.get('user_id')}_{dep.get('amount')}"
+                    ),
+                ),
+                InlineKeyboardButton(
+                    "❌ Reject",
+                    callback_data=f"dep_reject_{dep_id}_{dep.get('amount')}",
+                ),
             )
-            bot.send_message(message.chat.id, fail_text, parse_mode="Markdown")
+            dep_text = (
+                f"💰 **ငွေသွင်းတောင်းဆိုမှု အသစ်** (`{USERNAME}`)\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"👤 User: {dep.get('user_name')}\n"
+                f"💵 ပမာဏ: `{dep.get('amount'):,}` MMK\n"
+                f"🧾 Slip နံပါတ်/Remark: `{dep.get('remark', 'N/A')}`\n"
+                f"🏦 ဘဏ်အကောင့်: {dep.get('account', 'N/A')}\n"
+                f"📅 အချိန်: {dep.get('date', 'N/A')}\n"
+                f"━━━━━━━━━━━━━━━"
+            )
+            bot.send_message(
+                ADMIN_ID,
+                dep_text,
+                reply_markup=markup,
+                parse_mode="Markdown",
+            )
 
-    except Exception as e:
-        print(f"Error: {e}")
-        bot.send_message(message.chat.id, "❌ စလစ် စစ်ဆေးရာတွင် အမှားအယွင်း ရှိသွားပါသည်။ ခဏနေမှ ထပ်ကြိုးစားပေးပါ။")
+        withdraws = api.list_pending_withdraws()
+        for wd in withdraws:
+          wd_id = wd.get("id")
+          if wd_id and wd_id not in notified_withdraws:
+            notified_withdraws.add(wd_id)
+            markup = InlineKeyboardMarkup()
+            markup.row(
+                InlineKeyboardButton(
+                    "✅ Confirm",
+                    callback_data=(
+                        f"wd_confirm_{wd_id}_{wd.get('user_id')}_{wd.get('amount')}"
+                    ),
+                ),
+                InlineKeyboardButton(
+                    "❌ Reject",
+                    callback_data=(
+                        f"wd_reject_{wd_id}_{wd.get('user_id')}_{wd.get('amount')}"
+                    ),
+                ),
+            )
+            wd_text = (
+                f"💸 **ငွေထုတ်တောင်းဆိုမှု အသစ်** (`{USERNAME}`)\n"
+                f"━━━━━━━━━━━━━━━\n"
+                f"👤 User: {wd.get('user_name')}\n"
+                f"💵 ပမာဏ: `{wd.get('amount'):,}` MMK\n"
+                f"🏦 ဘဏ်အမျိုးအစား: {wd.get('type', 'N/A')}\n"
+                f"📱 အကောင့်နံပါတ်: `{wd.get('account_number', 'N/A')}`\n"
+                f"👤 အကောင့်အမည်: {wd.get('account_name', 'N/A')}\n"
+                f"📅 အချိန်: {wd.get('date', 'N/A')}\n"
+                f"━━━━━━━━━━━━━━━"
+            )
+            bot.send_message(
+                ADMIN_ID,
+                wd_text,
+                reply_markup=markup,
+                parse_mode="Markdown",
+            )
+      except Exception as e:
+        print(f"Polling error for {USERNAME}: {e}")
+      time.sleep(POLL_INTERVAL)
 
-# ============================================================================
-# ADMIN SETTING / LINK & PRICE EDITING
-# ============================================================================
-@bot.callback_query_handler(func=lambda call: call.data == "admin_edit_pkgs")
-def admin_edit_pkgs(call):
-    if call.from_user.id != ADMIN_ID:
-        return
+  @bot.callback_query_handler(
+      func=lambda call: call.data.startswith("dep_")
+      or call.data.startswith("wd_")
+  )
+  def handle_deposit_withdraw_action(call):
+    if call.from_user.id not in [ADMIN_ID, MAIN_ADMIN_ID]:
+      return
+    parts = call.data.split("_")
+    action_type = parts[0]
+    action = parts[1]
 
-    conn = sqlite3.connect('vip_bot.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name FROM packages")
-    pkgs = cursor.fetchall()
-    conn.close()
+    if action_type == "dep":
+      dep_id = int(parts[2])
+      if action == "confirm":
+        user_id = int(parts[3])
+        amount = float(parts[4])
+        if api.confirm_deposit(dep_id, user_id, amount):
+          bot.edit_message_text(
+              call.message.text
+              + f"\n\n✅ **Approved (ငွေသွင်းအတည်ပြုပြီး)**",
+              call.message.chat.id,
+              call.message.message_id,
+              parse_mode="Markdown",
+          )
+      else:
+        amount = float(parts[3])
+        if api.reject_deposit(dep_id, amount):
+          bot.edit_message_text(
+              call.message.text + f"\n\n❌ **Rejected (ငွေသွင်းပယ်ချပြီး)**",
+              call.message.chat.id,
+              call.message.message_id,
+              parse_mode="Markdown",
+          )
+    elif action_type == "wd":
+      wd_id = int(parts[2])
+      if action == "confirm":
+        user_id = int(parts[3])
+        amount = float(parts[4])
+        if api.confirm_withdraw(wd_id, user_id, amount):
+          bot.edit_message_text(
+              call.message.text
+              + f"\n\n✅ **Approved (ငွေထုတ်အတည်ပြုပြီး)**",
+              call.message.chat.id,
+              call.message.message_id,
+              parse_mode="Markdown",
+          )
+      else:
+        user_id = int(parts[3])
+        amount = float(parts[4])
+        if api.reject_withdraw(wd_id, user_id, amount):
+          bot.edit_message_text(
+              call.message.text + f"\n\n❌ **Rejected (ငွေထုတ်ပယ်ချပြီး)**",
+              call.message.chat.id,
+              call.message.message_id,
+              parse_mode="Markdown",
+          )
 
-    markup = InlineKeyboardMarkup()
-    for pkg_id, name in pkgs:
-        markup.row(InlineKeyboardButton(f"✏️ {name} ကို ပြင်ရန်", callback_data=f"edit_pkg_{pkg_id}"))
-    markup.row(InlineKeyboardButton("🔙 ပင်မမီနူးသို့", callback_data="admin_back_main"))
+  threading.Thread(target=polling_task, daemon=True).start()
+  print(f"Starting Single Buffalo Bot for {USERNAME}...")
+  bot.infinity_polling(timeout=60, long_polling_timeout=60)
 
-    bot.edit_message_text("⚙️ ပြင်ဆင်လိုသော Package ကို ရွေးပါ -", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("edit_pkg_"))
-def edit_specific_pkg(call):
-    if call.from_user.id != ADMIN_ID:
-        return
-    pkg_id = call.data.split("_", 2)[2]
-
-    conn = sqlite3.connect('vip_bot.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT name, price_mmk, price_thb, link FROM packages WHERE id = ?", (pkg_id,))
-    pkg = cursor.fetchone()
-    conn.close()
-
-    name, p_mmk, p_thb, link = pkg
-    admin_states[ADMIN_ID] = {"action": "editing_pkg", "pkg_id": pkg_id}
-
-    text = (
-        f"📦 **Package:** {name}\n"
-        f"💰 **လက်ရှိ ဈေးနှုန်း:** {p_mmk:,.0f} MMK / {p_thb} THB\n"
-        f"🔗 **လက်ရှိ လင့်ခ်:** {link}\n\n"
-        "✍️ **အသစ်ပြောင်းလဲရန် ပုံစံအတိုင်း ရိုက်ပို့ပေးပါ:**\n"
-        "`[MMK ဈေးနှုန်း] [THB ဈေးနှုန်း] [လင့်ခ်]`\n"
-        "ဥပမာ: `35000 250 https://t.me/+xyz123`"
-    )
-    markup = InlineKeyboardMarkup()
-    markup.row(InlineKeyboardButton("🔙 မီးနူးသို့", callback_data="admin_edit_pkgs"))
-    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-
-@bot.message_handler(func=lambda msg: msg.from_user.id == ADMIN_ID, content_types=['text'])
-def handle_admin_text(message):
-    state = admin_states.get(ADMIN_ID)
-    if state and state.get("action") == "editing_pkg":
-        pkg_id = state.get("pkg_id")
-        parts = message.text.strip().split(maxsplit=2)
-        
-        if len(parts) >= 3:
-            try:
-                new_mmk = float(parts[0].replace(",", ""))
-                new_thb = float(parts[1].replace(",", ""))
-                new_link = parts[2].strip()
-
-                conn = sqlite3.connect('vip_bot.db')
-                cursor = conn.cursor()
-                cursor.execute("UPDATE packages SET price_mmk = ?, price_thb = ?, link = ? WHERE id = ?", (new_mmk, new_thb, new_link, pkg_id))
-                conn.commit()
-                conn.close()
-
-                admin_states.pop(ADMIN_ID, None)
-                bot.send_message(message.chat.id, f"✅ Package ဈေးနှုန်းနှင့် လင့်ခ် အောင်မြင်စွာ ပြောင်းလဲပြီးပါပြီရှင်! ✨")
-                send_packages_menu(message.chat.id)
-                return
-            except ValueError:
-                pass
-        
-        bot.send_message(message.chat.id, "❌ ပုံစံ မှားယွင်းနေပါသည်။ ဥပမာ - `35000 250 https://t.me/+xyz123` ဟု ရိုက်ထည့်ပေးပါ။")
-
-@bot.callback_query_handler(func=lambda call: call.data == "admin_view_sales")
-def admin_view_sales(call):
-    if call.from_user.id != ADMIN_ID:
-        return
-    
-    conn = sqlite3.connect('vip_bot.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT amount, package_name, date FROM transactions ORDER BY id DESC LIMIT 10")
-    rows = cursor.fetchall()
-    conn.close()
-
-    text = "📊 **နောက်ဆုံးရောင်းအား မှတ်တမ်း (၁၀ ခု)**\n━━━━━━━━━━━━━━━━━━━\n"
-    if not rows:
-        text += "ရောင်းအား မှတ်တမ်း မရှိသေးပါ။\n"
-    else:
-        for r in rows:
-            text += f"• {r[2][:16]} | {r[1]} | {r[0]:,.0f} MMK\n"
-    
-    markup = InlineKeyboardMarkup()
-    markup.row(InlineKeyboardButton("🔙 ပင်မမီနူးသို့", callback_data="admin_back_main"))
-    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-
-@bot.callback_query_handler(func=lambda call: call.data == "admin_back_main")
-def admin_back_main(call):
-    if call.from_user.id != ADMIN_ID:
-        return
-    admin_states.pop(ADMIN_ID, None)
-    text = "👑 **Admin စီမံခန့်ခွဲမှု ပန်နယ်** 👑"
-    markup = InlineKeyboardMarkup()
-    markup.row(InlineKeyboardButton("⚙️ VIP Packages & Links များကို ပြင်ဆင်ရန်", callback_data="admin_edit_pkgs"))
-    markup.row(InlineKeyboardButton("📊 ရောင်းအားစာရင်း ကြည့်ရန်", callback_data="admin_view_sales"))
-    bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-
-# ============================================================================
-# MAIN
-# ============================================================================
 if __name__ == "__main__":
-    print("Multilingual VIP Bot is running successfully with New Token...")
-    bot.infinity_polling(skip_pending=True)
+  run_single_buffalo_bot()

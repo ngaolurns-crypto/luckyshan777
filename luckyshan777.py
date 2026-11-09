@@ -23,9 +23,9 @@ BASE_URL = "https://ag.buffalo688.com"
 POLL_INTERVAL = 3
 
 # 🔹 Bot Token အသစ်ကို အပိုင်းသုံးပိုင်းခွဲ၍ ထည့်သွင်းထားခြင်း (GitHub Secret Alert မတက်စေရန်)
-_t1 = "9290952148"
-_t2 = "AAFZc2SK9RvrFHzDgo"
-_t3 = "WBXYwOInzuuCBf4kw"
+_t1 = "9128966673"
+_t2 = "AAFsQ63vkIB8uhZyfqxm"
+_t3 = "HfLgQeuNTphaB8U"
 BOT_TOKEN = f"{_t1}:{_t2}-{_t3}"
 
 ADMIN_ID = 8022481594

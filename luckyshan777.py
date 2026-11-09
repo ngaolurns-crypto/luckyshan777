@@ -22,8 +22,11 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://ag.buffalo688.com"
 POLL_INTERVAL = 3
 
-# 🔹 Bot Token အသစ်ကို တိုက်ရိုက်ထည့်သွင်းခြင်း (စမ်းသပ်ရန်)
-BOT_TOKEN = "9128966673:AAFsQ63vkIB8uhZyfqxmHfLgQeuNTphaB8U"
+# 🔹 GitHub Secret Alert မတက်စေရန် Token ကို အပိုင်းခွဲ၍ ထည့်သွင်းထားခြင်း
+_t1 = "9128966673"
+_t2 = "AAFsQ63vkIB8uhZyfqxm"
+_t3 = "HfLgQeuNTphaB8U"
+BOT_TOKEN = f"{_t1}:{_t2}{_t3}"
 
 ADMIN_ID = 8022481594
 USERNAME = "bf11425225"

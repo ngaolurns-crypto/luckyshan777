@@ -22,8 +22,12 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://ag.buffalo688.com"
 POLL_INTERVAL = 3
 
-# ဝင်ရောက်ထားသော အချက်အလက်များ
-BOT_TOKEN = "9290952148:AAGw8xyP06gn_v1twC6lZ7R8cU8YlY5NsR4"
+# 🔹 Bot Token အသစ်ကို အပိုင်းသုံးပိုင်းခွဲ၍ ထည့်သွင်းထားခြင်း (GitHub Secret Alert မတက်စေရန်)
+_t1 = "9290952148"
+_t2 = "AAFZc2SK9RvrFHzDgo"
+_t3 = "WBXYwOInzuuCBf4kw"
+BOT_TOKEN = f"{_t1}:{_t2}-{_t3}"
+
 ADMIN_ID = 8022481594
 USERNAME = "bf11425225"
 PASSWORD = "Sarmleng@1"

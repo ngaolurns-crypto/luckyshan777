@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-import base64
 import json
 import logging
 import os
@@ -23,10 +22,8 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://ag.buffalo688.com"
 POLL_INTERVAL = 3
 
-# 🔹 GitHub Secret Alert လုံးဝ မတက်စေရန် Base64 ဖြင့် ဝှက်ထားသော Token
-# (Decoder: 9128966673:AAFsQ63vkIB8uhZyfqxmHfLgQeuNTphaB8U)
-_encoded_token = "OTEyODk2NjY3MzpBQUZzUTYzdmtJQjh1SFp5ZnF4bUhmTGdRZXVOVHBoYThV"
-BOT_TOKEN = base64.b64decode(_encoded_token.encode("utf-8")).decode("utf-8")
+# 🔹 Render ၏ Environment Variable မှ Token ကို လုံခြုံစွာ ယူသုံးခြင်း
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 ADMIN_ID = 8022481594
 USERNAME = "bf11425225"
@@ -182,6 +179,10 @@ class BuffaloAPIInstance:
 
 
 def run_single_buffalo_bot():
+  if not BOT_TOKEN:
+    print("❌ Error: TELEGRAM_BOT_TOKEN environment variable not set!")
+    return
+
   bot = telebot.TeleBot(BOT_TOKEN)
   api = BuffaloAPIInstance(USERNAME, PASSWORD)
   notified_deposits = set()
@@ -464,7 +465,7 @@ def run_single_buffalo_bot():
       else:
         amount = float(parts[3])
         if api.reject_deposit(dep_id, amount):
-          bot.exit_message_text(
+          bot.edit_message_text(
               call.message.text + f"\n\n❌ **Rejected (ငွေသွင်းပယ်ချပြီး)**",
               call.message.chat.id,
               call.message.message_id,
